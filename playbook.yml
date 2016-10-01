@@ -1,0 +1,401 @@
+#!/usr/bin/env ansible-playbook
+
+- name: Gather prerequisites
+  hosts: all
+  gather_facts: True
+  tasks:
+    - name: create groups based on distribution
+      group_by: key={{ ansible_distribution }}
+
+- name: Install Debugging Tools
+  hosts: Ubuntu
+  become: True
+  tasks:
+      - hostname: name=bravo
+      - pip: name=httpie
+      - apt: name=mysql-client-5.6 state=present update_cache=true cache_valid_time=3600 install_recommends=true
+
+- name: Start Docker Containers
+  hosts: Ubuntu
+  become: False
+  vars:
+       alpha_ip: "10.10.10.10"
+       bravo_ip: "10.10.10.20"
+       logfaces_ip: "192.168.254.123"
+
+       rabbitmq_user: "guest"
+       rabbitmq_password: "guest"
+       rabbitmq_vhost: "/"
+
+       reporting_exchange: "exchange-events"
+       reporting_database: "reporting"
+
+       report_generator_http_port: "2080"
+       report_generator_jmx_port: "2020"
+       report_generator_image_tag: "1.0.996.MILESTONE"
+
+       report_event_processor_image_tag: "1.0.780.MILESTONE"
+       report_event_processor_http_port: "3080"
+       report_event_processor_jmx_port: "3020"
+
+       mli_image_tag: "14-master"
+       mli_event_processor_http_port: "4080"
+       mli_rest_api_http_port: "5080"
+       mli_mysql_user: "mli"
+       mli_mysql_password: "mli"
+
+       journaler_image_tag: "16-master"
+
+       lds_image_tag: "1.0.900"
+       lds_http_port: 7400
+       lds_mysql_user: "lds"
+       lds_mysql_password: "lds"
+       lds_profile: "ild"
+       lds_liquibase_sync: "yes"
+       lds_extra_config: "DATABASE_HOST=mysql~USE_GRAYLOG=True~LOCAL_IP_OVERRIDE={{ bravo_ip }}~DATABASE_USER={{ lds_mysql_user }}~DATABASE_PASSWORD={{ lds_mysql_password }}~ALLOWED_HOSTS=['*']"
+       lds_base: "/opt/lds"
+       lds_web_fonts: "{{ lds_base }}/webfonts"
+       lds_static_content: "{{ lds_base}}/static"
+
+       lds_varnish_http_port: 7700
+       lds_varnishd_params: "-p default_ttl=82800"
+
+       lds_nginx_app_server_dns_internal: "lds"
+       lds_nginx_app_server_dns_external: "lds.transparent.com"
+       lds_nginx_tls: "{{ lds_base}}/tls"
+       lds_nginx_primary_insecure_port: 8080
+       lds_nginx_primary_secure_port: 8443
+       lds_nginx_secondary_insecure_port: 81
+       lds_nginx_secondary_secure_port: 444
+
+       tlo_image_tag: "1.11.21"
+       tlo_base: "/opt/tlo"
+       tlo_storage: "{{ tlo_base }}/storage"
+       tlo_work: "{{ tlo_base }}/work"
+
+  tasks:
+      - name: Mold-E REST Services
+        docker_container:
+            detach: True
+            env:
+                SPRING_PROFILES_ACTIVE: "default"
+                LFS_DOMAIN_NAME: "dumb"
+                JVM_HEAP_MIN: "256m"
+                JVM_HEAP_MAX: "256m"
+                JVM_JMX_HOST: "{{ bravo_ip }}"
+                JVM_JMX_PORT: "{{ report_generator_jmx_port }}"
+                JVM_JMX_RMI_PORT: "{{ report_generator_jmx_port }}"
+                server_contextPath: "/"
+                mold-e_keyStorePath: "/tls/keystore.jks"
+                mold-e_keyStorePassword: "CHANGEME"
+                mold-e_keyStoreAlias: "server"
+                mold-e_mliForeverPort: "{{ mli_rest_api_http_port }}"
+                mold-e_mongoHost: "mongodb"
+                mold-e_mongoDatabaseName: "{{ reporting_database }}"
+# TODO: Visualiz-E settings
+            etc_hosts:
+                mongodb: "{{ alpha_ip }}"
+                mli-forever: "{{ bravo_ip }}"
+            hostname: "report-generator"
+            image: "registry.transparent.com/mold-e-rest-services:{{ report_generator_image_tag }}"
+            log_driver: "json-file"
+            log_options:
+                max-size: "50m"
+            name: "report-generator"
+            network_mode: "bridge"
+            published_ports:
+            - "{{ report_generator_http_port }}:8080"
+            - "{{ report_generator_jmx_port }}:2020"
+            pull: False
+            restart_policy: "always"
+            state: "started"
+            trust_image_content: True
+            volumes:
+            - "/tmp:/tls:ro"
+
+      - name: Mold-E Event Processor
+        docker_container:
+            detach: True
+            env:
+                SPRING_PROFILES_ACTIVE: "default"
+                LFS_DOMAIN_NAME: "dumb"
+                JVM_HEAP_MIN: "256m"
+                JVM_HEAP_MAX: "256m"
+                JVM_JMX_HOST: "{{ bravo_ip }}"
+                JVM_JMX_PORT: "{{ report_event_processor_jmx_port }}"
+                JVM_JMX_RMI_PORT: "{{ report_event_processor_jmx_port }}"
+                mold-e_rabbitExchangeName: "{{ reporting_exchange }}"
+                spring_rabbitmq_host: "rabbitmq"
+                spring_rabbitmq_virtual-host: "{{ rabbitmq_vhost }}"
+                spring_rabbitmq_username: "{{ rabbitmq_user }}"
+                spring_rabbitmq_password: "{{ rabbitmq_password }}"
+                spring_data_mongodb_host: "mongodb"
+                spring_data_mongodb_database: "{{ reporting_database }}"
+            etc_hosts:
+                mongodb: "{{ alpha_ip }}"
+                rabbitmq: "{{ alpha_ip }}"
+            hostname: "event-processor"
+            image: "registry.transparent.com/mold-e-reporting-event-processor:{{ report_event_processor_image_tag }}"
+            log_driver: "json-file"
+            log_options:
+                max-size: "50m"
+            name: "event-processor"
+            network_mode: "bridge"
+            published_ports:
+            - "{{ report_event_processor_http_port }}:8080"
+            - "{{ report_event_processor_jmx_port }}:2020"
+            pull: False
+            restart_policy: "always"
+            state: "started"
+            trust_image_content: True
+
+      - name: MLI Event Processor
+        docker_container:
+            command: python manage.py consume
+            detach: True
+            env:
+                MLI4EVR_AMQP_HOST: "rabbitmq"
+                MLI4EVR_AMQP_USER: "{{ rabbitmq_user }}"
+                MLI4EVR_AMQP_PASSWORD: "{{ rabbitmq_password }}"
+                MLI4EVR_AMQP_VHOST: "{{ rabbitmq_vhost }}"
+                MLI4EVR_AMQP_EXCHANGE: "{{ reporting_exchange }}"
+                MLI4EVR_AMQP_QUEUE: "mli-forever"
+                MLI4EVR_AMQP_CONSUMERS: 10
+                MLI4EVR_DB_HOST: "mysql"
+                MLI4EVR_DB_USER: "{{ mli_mysql_user }}"
+                MLI4EVR_DB_PASSWORD: "{{ mli_mysql_password }}"
+                MLI4EVR_DB_NAME: "mli"
+                MLI4EVR_DEBUGGING_ENABLED: "True"
+                MLI4EVR_LOGGING_LOGFACES_HOST: "logfaces"
+                MLI4EVR_LOGGING_LOGFACES_DOMAIN: "mli-tlo-sa"
+            etc_hosts:
+                logfaces: "{{ logfaces_ip }}"
+                mysql: "{{ alpha_ip }}"
+                rabbitmq: "{{ alpha_ip }}"
+            hostname: "mli-event-processor"
+            image: "registry.transparent.com/molde-mli-forever:{{ mli_image_tag }}"
+            log_driver: "json-file"
+            log_options:
+                max-size: "50m"
+            name: "mli-event-processor"
+            network_mode: "bridge"
+            published_ports:
+            - "{{ mli_event_processor_http_port }}:8080"
+            pull: False
+            restart_policy: "always"
+            state: "started"
+            trust_image_content: True
+
+      - name: MLI REST API
+        docker_container:
+            detach: True
+            env:
+                MLI4EVR_DB_HOST: "mysql"
+                MLI4EVR_DB_USER: "{{ mli_mysql_user }}"
+                MLI4EVR_DB_PASSWORD: "{{ mli_mysql_password }}"
+                MLI4EVR_DB_NAME: "mli"
+                MLI4EVR_DEBUGGING_ENABLED: "True"
+                MLI4EVR_LOGGING_LOGFACES_HOST: "logfaces"
+                MLI4EVR_LOGGING_LOGFACES_DOMAIN: "mli-tlo-sa"
+            etc_hosts:
+                logfaces: "{{ logfaces_ip }}"
+                mysql: "{{ alpha_ip }}"
+            hostname: "mli-rest-api"
+            image: "registry.transparent.com/molde-mli-forever:{{ mli_image_tag }}"
+            log_driver: "json-file"
+            log_options:
+                max-size: "50m"
+            name: "mli-rest-api"
+            network_mode: "bridge"
+            published_ports:
+            - "{{ mli_rest_api_http_port }}:8080"
+            pull: False
+            restart_policy: "always"
+            state: "started"
+            trust_image_content: True
+
+      - name: Event Journaler
+        docker_container:
+            detach: True
+            env:
+                JOURNAL_AMQP_HOST: "rabbitmq"
+                JOURNAL_AMQP_USER: "{{ rabbitmq_user }}"
+                JOURNAL_AMQP_PASSWORD: "{{ rabbitmq_password }}"
+                JOURNAL_AMQP_VHOST: "{{ rabbitmq_vhost }}"
+                JOURNAL_AMQP_EXCHANGE: "{{ reporting_exchange }}"
+                JOURNAL_AMQP_QUEUE: "event-journal"
+                JOURNAL_AMQP_CONSUMERS: 2
+                JOURNAL_MONGO_HOST: "mongodb"
+                JOURNAL_MONGO_DB: "reporting-event-journal"
+                JOURNAL_MONGO_COLLECTION: "journaledEvent"
+            etc_hosts:
+                mongodb: "{{ alpha_ip }}"
+                rabbitmq: "{{ alpha_ip }}"
+            hostname: "event-journaler"
+            image: "registry.transparent.com/molde-journal:{{ journaler_image_tag }}"
+            log_driver: "json-file"
+            log_options:
+                max-size: "50m"
+            name: "event-journaler"
+            network_mode: "bridge"
+            pull: False
+            restart_policy: "always"
+            state: "started"
+            trust_image_content: True
+
+      # create the local directories for LDS, which is probably a bad practice
+      - file: path="{{ lds_base }}" state=directory mode=0755
+      - file: path="{{ lds_static_content }}" state=directory mode=0755
+      - file: path="{{ lds_nginx_tls }}" state=directory mode=0755
+      - file: path="{{ lds_nginx_tls }}/private" state=directory mode=0755
+      - file: path="{{ lds_nginx_tls }}/certs" state=directory mode=0755
+      - unarchive: src="http://192.168.254.81:81/artifactory/static/lds/lds-webfonts-898.tar.gz" dest="{{ lds_base }}" copy=no mode=0555
+      - get_url: url="http://192.168.254.81:81/artifactory/static/ssl/2015-10-02/test/private/server.key" dest="{{ lds_nginx_tls }}/private/server.key" mode=0440
+      - get_url: url="http://192.168.254.81:81/artifactory/static/ssl/2015-10-02/test/certs/server.pem" dest="{{ lds_nginx_tls }}/certs/server.pem" mode=0440
+
+      - name: Language Data Service
+        docker_container:
+            detach: True
+            etc_hosts:
+                mysql: "{{ alpha_ip }}"
+            hostname: "lds"
+            image: "registry.transparent.com/lds:{{ lds_image_tag }}"
+            log_driver: "json-file"
+            log_options:
+                max-size: "50m"
+            name: "lds"
+            network_mode: "bridge"
+            published_ports:
+            - "{{ lds_http_port }}:8000"
+            pull: False
+            restart_policy: "always"
+            state: "started"
+            trust_image_content: True
+#TODO: the use of file system is frowned upon due to migration complications. Can we do better?
+            volumes:
+            - "{{ lds_web_fonts }}:/opt/media/webfonts:ro"
+            - "{{ lds_static_content }}:/opt/lds_static:rw"
+            command: "{{ lds_profile }} {{ lds_liquibase_sync }} {{ lds_extra_config }}"
+
+      - name: Varnish
+        docker_container:
+            detach: True
+            env:
+                VARNISH_BACKEND_PORT: "{{ lds_http_port }}"
+                VARNISH_BACKEND_IP: "lds"
+                VARNISH_PORT: "{{ lds_varnish_http_port }}"
+                VARNISHD_PARAMS: "{{ lds_varnishd_params }}"
+                CACHE_SIZE: "64m"
+            etc_hosts:
+                lds: "{{ bravo_ip }}"
+            hostname: "varnish"
+            image: "registry.transparent.com/lds-varnish:{{ lds_image_tag }}"
+            log_driver: "json-file"
+            log_options:
+                max-size: "50m"
+            name: "varnish"
+            network_mode: "bridge"
+            published_ports:
+            - "{{ lds_varnish_http_port }}:6081"
+            pull: False
+            restart_policy: "always"
+            state: "started"
+            trust_image_content: True
+
+      - name: Nginx
+        docker_container:
+            detach: True
+            env:
+                APP_PORT: "{{ lds_http_port }}"
+                VARNISH_PORT: "{{ lds_varnish_http_port }}"
+                APP_SERVER_IP: "{{ bravo_ip }}"
+                APP_SERVER_DNS_INTERNAL: "{{ lds_nginx_app_server_dns_internal }}"
+                APP_SERVER_DNS_EXTERNAL: "{{ lds_nginx_app_server_dns_external }}"
+                APP_ROOT: "/opt/app"
+                PORT_HTTP: "{{ lds_nginx_primary_insecure_port }}"
+                PORT_HTTPS: "{{ lds_nginx_primary_secure_port }}"
+                PORT_HTTP_SECONDARY: "{{ lds_nginx_secondary_insecure_port }}"
+                PORT_HTTPS_SECONDARY: "{{ lds_nginx_secondary_secure_port }}"
+            etc_hosts:
+                lds: "{{ bravo_ip }}"
+            hostname: "ngnix"
+            image: "registry.transparent.com/lds-nginx:{{ lds_image_tag }}"
+            log_driver: "json-file"
+            log_options:
+                max-size: "50m"
+            name: "nginx"
+            network_mode: "bridge"
+            published_ports:
+            - "{{ lds_nginx_primary_insecure_port }}:{{ lds_nginx_primary_insecure_port }}"
+            - "{{ lds_nginx_primary_secure_port }}:{{ lds_nginx_primary_secure_port }}"
+            - "{{ lds_nginx_secondary_insecure_port }}:{{ lds_nginx_secondary_insecure_port }}"
+            - "{{ lds_nginx_secondary_secure_port }}:{{ lds_nginx_secondary_secure_port }}"
+            pull: False
+            restart_policy: "always"
+            state: "started"
+            trust_image_content: True
+#TODO: the use of file system is frowned upon due to migration complications. Can we do better?
+            volumes:
+            - "{{ lds_nginx_tls }}:/etc/ssl:ro"
+            - "{{ lds_static_content }}:/opt/lds_static:ro"
+
+      # create the local directories for TLO, which is probably a bad practice
+      - file: path="{{ tlo_base }}" state=directory mode=0755
+      - file: path="{{ tlo_storage }}" state=directory mode=0755
+      - file: path="{{ tlo_work }}" state=directory mode=0755
+
+      - name: TLO
+        docker_container:
+            detach: True
+            env:
+                BANNER: "TLO"
+                SERVICE_TLO: true
+                SERVICE_MYSQL: false
+                SERVICE_TLO_CREATE_DATABASES: false
+                TLO_PROFILE: "rr5"
+                TLO_CFG_BOX_DATASOURCE_JDBC_URL: "jdbc:mysql://mysql:3306/box?autoReconnect=true"
+                TLO_CFG_BOX_DATASOURCE_JDBC_USERNAME: "bykiweb"
+                TLO_CFG_BOX_DATASOURCE_JDBC_PASSWORD: "bykiweb"
+                TLO_CFG_CONSOLE_DATASOURCE_JDBC_URL: "jdbc:mysql://mysql:3306/console?autoReconnect=true"
+                TLO_CFG_CONSOLE_DATASOURCE_JDBC_USERNAME: "bykiweb"
+                TLO_CFG_CONSOLE_DATASOURCE_JDBC_PASSWORD: "bykiweb"
+                TLO_CAP_ENABLE_REPORTING_GROUPS: true
+                TLO_CFG_BOX_VERSION_USE_BUILDINFO: true
+                TLO_CFG_BOX_CONNECTOR_SSL: true
+                TLO_CFG_BOX_CONNECTOR_SSL_PORT: 8443
+                TLO_CFG_LMSS_AWS_ENABLE: false
+                TLO_SERVICE_JMX_HOSTNAME: "https://10.10.10.20"
+                TLO_SERVICE_JMX_PORT: 4000
+                TLO_SERVICE_MEM_INIT: "192m"
+                TLO_SERVICE_MEM_MAX: "1024m"
+                TLO_VERSION_CODENAME: "TLOILD"
+                TLO_SET_AMQP_BROKER_AUTHENTICATION: false
+                TLO_SET_INTEGRATION_CANONICAL_HOSTNAME: "https://ild.transparent.com"
+                TLO_SET_INTEGRATION_EVENTLOG_TRANSMITTER_PERIOD: 86400
+                TLO_SET_INTEGRATION_AMQP_BROKER_URI: "amqp://rabbitmq/rr5"
+            etc_hosts:
+                mysql: "{{ bravo_ip }}"
+                rabbitmq: "{{ bravo_ip }}"
+            hostname: "tlo"
+            image: "registry.transparent.com/tlo:{{ tlo_image_tag }}"
+            log_driver: "json-file"
+            log_options:
+                max-size: "50m"
+            name: "tlo"
+            network_mode: "bridge"
+            published_ports:
+            - "80:8080"
+            - "443:8443"
+            - "4000:4000"
+            pull: False
+            restart_policy: "always"
+            state: "started"
+            trust_image_content: True
+#TODO: the use of file system is frowned upon due to migration complications. Can we do better?
+            volumes:
+            - "{{ tlo_storage }}:/mnt/storage:rw"
+            - "{{ tlo_work }}:/opt/tlo/work:rw"
+            - "/etc/localtime:/etc/localtime:ro"
+            - "/etc/timezone:/etc/timezone:ro"
+#           - "{{ tlo_base }}/tlo-client.jks:/opt/tlo/conf/jmx/tlo-client.jks:ro"
+#           - "{{ tlo_base }}/tlo-server.jks:/opt/tlo/conf/jmx/tlo-server.jks:ro"
