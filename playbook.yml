@@ -102,9 +102,8 @@
        rabbitmq_vhost: "/"
 
   tasks:
-      - name: Redis
-        file: path=/vagrant/redis-data state=directory
-        docker_container:
+      - file: path=/vagrant/redis-data state=directory
+      - docker_container:
             detach: True
             image: "redis:latest"
             name: "redis"
