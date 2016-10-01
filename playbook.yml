@@ -94,7 +94,7 @@
             tag: "latest"
 
 - name: Start Docker Containers
-  hosts: nobody
+  hosts: Ubuntu
   become: False
   vars:
        rabbitmq_user: "guest"
