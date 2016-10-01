@@ -13,7 +13,7 @@
   tasks:
       - hostname: name=helheim
       - pip: name=httpie
-      - apt: name=mysql-client-5.6 state=present update_cache=true cache_valid_time=3600 install_recommends=true
+#     - apt: name=mysql-client-5.6 state=present update_cache=true cache_valid_time=3600 install_recommends=true
 
 - name: Pull Down Docker Containers
   hosts: Ubuntu
