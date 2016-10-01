@@ -116,3 +116,17 @@
             - /vagrant/redis-data:/data:rw
             - /vagrant/configuration/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
 
+      - file: path=/vagrant/mongodb-data state=directory
+      - docker_container:
+            detach: True
+            image: "mongo:latest"
+            name: "mongodb"
+            network_mode: "host"
+            pull: True
+            restart_policy: "always"
+            state: "started"
+            trust_image_content: True
+            volumes:
+            - /vagrant/mongodb-data:/data/db:rw
+            command: mongod --storageEngine=wiredTiger --wiredTigerCacheSizeGB=1 --notablescan --journalCommitInterval=300 --directoryperdb 
+
