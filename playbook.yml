@@ -15,6 +15,37 @@
       - pip: name=httpie
 #     - apt: name=mysql-client-5.6 state=present update_cache=true cache_valid_time=3600 install_recommends=true
 
+- name: Install Sysdig
+  hosts: Ubuntu
+  become: True
+  tasks:
+      - apt_key: url=https://s3.amazonaws.com/download.draios.com/DRAIOS-GPG-KEY.public state=present
+      - apt_repository: repo='deb http://download.draios.com/stable/deb stable-$(ARCH)/' state=present
+      - shell: apt-get -y install linux-headers-$(uname -r)
+      - apt: name=sysdig state=latest update_cache=true
+
+- name: Install Docker
+  hosts: Ubuntu
+  become: True
+  tasks:
+    - apt: name=curl state=latest update_cache=true cache_valid_time=600
+    - command: /usr/bin/curl --location --output /root/install-docker https://get.docker.com/
+    - file: path=/root/install-docker owner=root group=root mode=0500
+    - shell: /root/install-docker
+    - file: path=/etc/systemd/system/docker.service.d state=directory mode=0755
+    - copy: src=files/root-dir.conf dest=/etc/systemd/system/docker.service.d/root-dir.conf owner=root group=root mode=444 backup=no
+    - command: usermod -aG docker vagrant
+    - command: systemctl daemon-reload
+    - command: systemctl restart docker
+    - command: docker run hello-world
+
+    - shell: /usr/bin/curl --location --output /usr/local/bin/docker-compose https://github.com/docker/compose/releases/download/1.8.1/docker-compose-`uname -s`-`uname -m`
+    - file: path=/usr/local/bin/docker-compose owner=root group=root mode=0555
+    - command: docker-compose --version
+
+    - get_url: url=https://github.com/docker/machine/releases/download/v0.8.2/docker-machine-Linux-x86_64 dest=/usr/local/bin/docker-machine mode=0555
+    - command: docker-machine --version
+
 - name: Pull Down Docker Containers
   hosts: Ubuntu
   become: False
