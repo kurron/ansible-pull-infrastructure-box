@@ -102,7 +102,7 @@
        rabbitmq_vhost: "/"
 
   tasks:
-      - name: Redis 
+      - name: Redis
         file: path=/vagrant/redis-data state=directory
         docker_container:
             detach: True
