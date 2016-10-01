@@ -11,12 +11,56 @@
   hosts: Ubuntu
   become: True
   tasks:
-      - hostname: name=bravo
+      - hostname: name=helheim
       - pip: name=httpie
       - apt: name=mysql-client-5.6 state=present update_cache=true cache_valid_time=3600 install_recommends=true
 
-- name: Start Docker Containers
+- name: Pull Down Docker Containers
   hosts: Ubuntu
+  become: False
+  tasks:
+      - docker_image:
+            name: "redis"
+            tag: "latest"
+      - docker_image:
+            name: "mongo"
+            tag: "latest"
+      - docker_image:
+            name: "mysql"
+            tag: "latest"
+      - docker_image:
+            name: "elasticsearch"
+            tag: "latest"
+      - docker_image:
+            name: "postgres"
+            tag: "latest"
+      - docker_image:
+            name: "logstash"
+            tag: "latest"
+      - docker_image:
+            name: "kibana"
+            tag: "latest"
+      - docker_image:
+            name: "rabbitmq"
+            tag: "management"
+      - docker_image:
+            name: "haproxy"
+            tag: "latest"
+      - docker_image:
+            name: "consul"
+            tag: "latest"
+      - docker_image:
+            name: "neo4j"
+            tag: "latest"
+      - docker_image:
+            name: "mongo-express"
+            tag: "latest"
+      - docker_image:
+            name: "vault"
+            tag: "latest"
+
+- name: Start Docker Containers
+  hosts: nobody
   become: False
   vars:
        alpha_ip: "10.10.10.10"
