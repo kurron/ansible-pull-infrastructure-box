@@ -192,3 +192,27 @@
                 MYSQL_PASSWORD: "mysql"
                 MYSQL_DATABASE: "kurron"
 
+      - docker_container:
+            name: "consul-data"
+            image: "busybox:latest"
+            network_mode: "none"
+            pull: True
+            volumes:
+            - /consul/data
+            - /consul/config
+      - docker_container:
+            detach: True
+            image: "consul:latest"
+            name: "consul"
+            network_mode: "host"
+            pull: True
+            restart_policy: "always"
+            state: "started"
+            trust_image_content: True
+            volumes_from:
+            - consul-data
+            env:
+                CONSUL_CLIENT_INTERFACE: "enp0s8"
+                CONSUL_BIND_INTERFACE: "enp0s8"
+            command: consul agent -server -bootstrap-expect=1 -dc=nine-realms -ui
+
