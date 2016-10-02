@@ -143,7 +143,7 @@
             volumes:
             - /vagrant/data/rabbitmq:/var/lib/rabbitmq:rw
             # limit RabbitMQ's RAM or it will steal 40% of available memory
-            memory: "1g"
+            memory: "1GB"
             env:
                 RABBITMQ_DEFAULT_USER: "guest"
                 RABBITMQ_DEFAULT_PASS: "guest"
