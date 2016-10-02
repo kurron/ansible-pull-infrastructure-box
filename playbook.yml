@@ -214,5 +214,5 @@
             env:
                 CONSUL_CLIENT_INTERFACE: "enp0s8"
                 CONSUL_BIND_INTERFACE: "enp0s8"
-            command: consul agent -server -bootstrap-expect=1 -dc=nine-realms -ui
+            command: consul agent -server -bootstrap-expect=1 -dc=nine-realms -ui -data-dir /consul/data
 
