@@ -166,3 +166,29 @@
                 RABBITMQ_DEFAULT_USER: "guest"
                 RABBITMQ_DEFAULT_PASS: "guest"
                 RABBITMQ_DEFAULT_VHOST: "/"
+
+      - docker_container:
+            name: "mysql-data"
+            image: "busybox:latest"
+            network_mode: "none"
+            pull: True
+            volumes:
+            - /var/lib/mysql
+            - /etc/mysql/conf.d
+      - docker_container:
+            detach: True
+            image: "mysql:latest"
+            name: "mysql"
+            network_mode: "host"
+            pull: True
+            restart_policy: "always"
+            state: "started"
+            trust_image_content: True
+            volumes_from:
+            - mysql-data
+            env:
+                MYSQL_ROOT_PASSWORD: "sa"
+                MYSQL_USER: "mysql"
+                MYSQL_PASSWORD: "mysql"
+                MYSQL_DATABASE: "kurron"
+
