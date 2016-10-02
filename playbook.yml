@@ -102,7 +102,7 @@
        rabbitmq_vhost: "/"
 
   tasks:
-      - file: path=/vagrant/redis-data state=directory
+      - file: path=/vagrant/data/redis state=directory
       - docker_container:
             detach: True
             image: "redis:latest"
@@ -113,10 +113,10 @@
             state: "started"
             trust_image_content: True
             volumes:
-            - /vagrant/redis-data:/data:rw
+            - /vagrant/data/redis:/data:rw
             - /vagrant/configuration/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
 
-      - file: path=/vagrant/mongodb-data state=directory
+      - file: path=/vagrant/data/mongodb state=directory
       - docker_container:
             detach: True
             image: "mongo:latest"
@@ -127,6 +127,24 @@
             state: "started"
             trust_image_content: True
             volumes:
-            - /vagrant/mongodb-data:/data/db:rw
-            command: mongod --storageEngine=wiredTiger --wiredTigerCacheSizeGB=1 --notablescan --journalCommitInterval=300 --directoryperdb 
+            - /vagrant/data/mongodb:/data/db:rw
+            command: mongod --storageEngine=wiredTiger --wiredTigerCacheSizeGB=1 --notablescan --journalCommitInterval=300 --directoryperdb
 
+      - file: path=/vagrant/data/rabbitmq state=directory
+      - docker_container:
+            detach: True
+            image: "rabbitmq:management"
+            name: "rabbitmq"
+            network_mode: "host"
+            pull: True
+            restart_policy: "always"
+            state: "started"
+            trust_image_content: True
+            volumes:
+            - /vagrant/data/rabbitmq:/var/lib/rabbitmq:rw
+            # limit RabbitMQ's RAM or it will steal 40% of available memory
+            memory: "1g"
+            env:
+                RABBITMQ_DEFAULT_USER: "guest"
+                RABBITMQ_DEFAULT_PASS: "guest"
+                RABBITMQ_DEFAULT_VHOST: "/"
