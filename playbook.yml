@@ -226,7 +226,7 @@
       - docker_container:
             detach: True
             image: "elasticsearch:latest"
-            name: "consul"
+            name: "elasticsearch"
             network_mode: "host"
             pull: True
             restart_policy: "always"
