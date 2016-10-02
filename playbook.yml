@@ -216,3 +216,21 @@
 #               CONSUL_BIND_INTERFACE: "enp0s8"
             command: consul agent -server -bootstrap -datacenter=nine-realms -ui -data-dir /consul/data -config-dir /consul/config -advertise 192.168.1.61 -bind 192.168.1.61 -client 192.168.1.61
 
+      - docker_container:
+            name: "elasticsearch-data"
+            image: "busybox:latest"
+            network_mode: "none"
+            pull: True
+            volumes:
+            - /usr/share/elasticsearch/data
+      - docker_container:
+            detach: True
+            image: "elasticsearch:latest"
+            name: "consul"
+            network_mode: "host"
+            pull: True
+            restart_policy: "always"
+            state: "started"
+            trust_image_content: True
+            volumes_from:
+            - elasticsearch-data
